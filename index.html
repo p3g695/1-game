@@ -70,25 +70,99 @@
       background-color: #bbada0;
       border-radius: 6px;
       padding: 15px;
+      position: relative;
+    }
+
+    .grid-container {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       grid-template-rows: repeat(4, 1fr);
       gap: 15px;
-      position: relative;
+      width: 100%;
+      height: 100%;
     }
 
-    .cell {
+    .grid-cell {
       background-color: rgba(238, 228, 218, 0.35);
+      border-radius: 3px;
+    }
+
+    .tile-container {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      right: 15px;
+      bottom: 15px;
+      pointer-events: none;
+    }
+
+    .tile {
+      position: absolute;
+      width: 78.75px;
+      height: 78.75px;
       border-radius: 3px;
       display: flex;
       justify-content: center;
       align-items: center;
       font-size: 32px;
       font-weight: bold;
-      transition: all 0.15s ease-in-out;
+      transition: transform 0.1s ease-in-out;
     }
 
-    /* Tile Colors matching original 2048 palette mapped to inverse values */
+    /* Tile Placement Positioning */
+    .position-0-0 { transform: translate(0px, 0px); }
+    .position-0-1 { transform: translate(93.75px, 0px); }
+    .position-0-2 { transform: translate(187.5px, 0px); }
+    .position-0-3 { transform: translate(281.25px, 0px); }
+
+    .position-1-0 { transform: translate(0px, 93.75px); }
+    .position-1-1 { transform: translate(93.75px, 93.75px); }
+    .position-1-2 { transform: translate(187.5px, 93.75px); }
+    .position-1-3 { transform: translate(281.25px, 93.75px); }
+
+    .position-2-0 { transform: translate(0px, 187.5px); }
+    .position-2-1 { transform: translate(93.75px, 187.5px); }
+    .position-2-2 { transform: translate(187.5px, 187.5px); }
+    .position-2-3 { transform: translate(281.25px, 187.5px); }
+
+    .position-3-0 { transform: translate(0px, 281.25px); }
+    .position-3-1 { transform: translate(93.75px, 281.25px); }
+    .position-3-2 { transform: translate(187.5px, 281.25px); }
+    .position-3-3 { transform: translate(281.25px, 281.25px); }
+
+    /* Tile Animations */
+    .tile-new {
+      animation: appear 0.2s ease-in-out;
+    }
+
+    .tile-merged {
+      animation: pop 0.2s ease-in-out 0.1s;
+    }
+
+    @keyframes appear {
+      0% {
+        opacity: 0;
+        scale: 0;
+      }
+      100% {
+        opacity: 1;
+        scale: 1;
+      }
+    }
+
+    @keyframes pop {
+      0% {
+        scale: 1;
+      }
+      50% {
+        scale: 1.2;
+      }
+      100% {
+        scale: 1;
+      }
+    }
+
+    /* Tile Colors */
     .tile-2048 { background: #eee4da; color: #776e65; }
     .tile-1024 { background: #ede0c8; color: #776e65; }
     .tile-512  { background: #f2b179; color: #f9f6f2; }
@@ -102,6 +176,7 @@
     .tile-2    { background: #edc22e; color: #f9f6f2; }
     .tile-1    { background: #3c3a32; color: #f9f6f2; box-shadow: 0 0 10px #edc22e; }
 
+    /* Game Over Overlay Animation */
     .game-over {
       position: absolute;
       top: 0;
@@ -117,6 +192,17 @@
       font-size: 36px;
       font-weight: bold;
       color: #776e65;
+      z-index: 100;
+      animation: fadeIn 0.8s ease-in-out forwards;
+    }
+
+    @keyframes fadeIn {
+      0% {
+        opacity: 0;
+      }
+      100% {
+        opacity: 1;
+      }
     }
 
     .restart-btn {
@@ -128,6 +214,7 @@
       border-radius: 3px;
       font-weight: bold;
       cursor: pointer;
+      pointer-events: auto;
     }
 
     .restart-btn:hover {
@@ -147,21 +234,36 @@
     </div>
     
     <div class="instructions">
-      Join the numbers to divide down and get to the <strong>1 tile!</strong>
+      Join the numbers to divide down and reach the <strong>1 tile!</strong>
     </div>
 
-    <div class="game-board" id="board"></div>
+    <div class="game-board">
+      <div class="grid-container">
+        <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+        <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+        <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+        <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+      </div>
+      <div class="tile-container" id="tile-container"></div>
+      <div id="overlay-container"></div>
+    </div>
   </div>
 
   <script>
     const BOARD_SIZE = 4;
     let board = [];
     let score = 0;
+    let tileIdCounter = 0;
+    let isMoving = false;
 
     function initGame() {
-      board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+      board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
       score = 0;
+      tileIdCounter = 0;
       updateScore(0);
+      document.getElementById('overlay-container').innerHTML = '';
+      document.getElementById('tile-container').innerHTML = '';
+      
       spawnTile();
       spawnTile();
       renderBoard();
@@ -171,33 +273,49 @@
       const emptyCells = [];
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
-          if (board[r][c] === 0) emptyCells.push({ r, c });
+          if (!board[r][c]) emptyCells.push({ r, c });
         }
       }
       if (emptyCells.length > 0) {
         const { r, c } = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-        // Spawns 2048 (90% chance) or 1024 (10% chance)
-        board[r][c] = Math.random() < 0.9 ? 2048 : 1024;
+        const val = Math.random() < 0.9 ? 2048 : 1024;
+        board[r][c] = {
+          id: ++tileIdCounter,
+          val: val,
+          r: r,
+          c: c,
+          isNew: true,
+          merged: false
+        };
       }
     }
 
     function renderBoard() {
-      const boardElement = document.getElementById('board');
-      boardElement.innerHTML = '';
+      const container = document.getElementById('tile-container');
+      container.innerHTML = '';
 
       let hasWon = false;
 
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
-          const val = board[r][c];
-          const cell = document.createElement('div');
-          cell.className = 'cell';
-          if (val > 0) {
-            cell.textContent = val;
-            cell.classList.add(`tile-${val}`);
+          const tile = board[r][c];
+          if (tile) {
+            const tileElement = document.createElement('div');
+            tileElement.className = `tile tile-${tile.val} position-${tile.r}-${tile.c}`;
+            tileElement.textContent = tile.val;
+
+            if (tile.isNew) {
+              tileElement.classList.add('tile-new');
+              tile.isNew = false;
+            } else if (tile.merged) {
+              tileElement.classList.add('tile-merged');
+              tile.merged = false;
+            }
+
+            container.appendChild(tileElement);
+
+            if (tile.val === 1) hasWon = true;
           }
-          if (val === 1) hasWon = true;
-          boardElement.appendChild(cell);
         }
       }
 
@@ -213,72 +331,127 @@
       document.getElementById('score').textContent = score;
     }
 
-    function slide(row) {
-      let arr = row.filter(val => val !== 0);
-      for (let i = 0; i < arr.length - 1; i++) {
-        if (arr[i] === arr[i + 1]) {
-          arr[i] = arr[i] / 2; // Divide down instead of multiplying
-          updateScore(2048 / arr[i]);
-          arr[i + 1] = 0;
+    function slideLine(line) {
+      let result = [];
+      let mergedInLine = false;
+
+      // Filter out empty spaces
+      let filtered = line.filter(tile => tile !== null);
+
+      for (let i = 0; i < filtered.length; i++) {
+        if (i < filtered.length - 1 && filtered[i].val === filtered[i + 1].val) {
+          // Merge tiles (Halve value)
+          let mergedVal = filtered[i].val / 2;
+          let mergedTile = {
+            id: filtered[i].id,
+            val: mergedVal,
+            r: filtered[i].r,
+            c: filtered[i].c,
+            isNew: false,
+            merged: true
+          };
+          result.push(mergedTile);
+          updateScore(2048 / mergedVal);
+          i++; // Skip merged partner
+          mergedInLine = true;
+        } else {
+          filtered[i].merged = false;
+          filtered[i].isNew = false;
+          result.push(filtered[i]);
         }
       }
-      arr = arr.filter(val => val !== 0);
-      while (arr.length < BOARD_SIZE) {
-        arr.push(0);
+
+      while (result.length < BOARD_SIZE) {
+        result.push(null);
       }
-      return arr;
+
+      return { line: result, moved: mergedInLine };
     }
 
     function move(direction) {
-      let moved = false;
-      let prevBoard = JSON.stringify(board);
+      if (isMoving) return;
+      isMoving = true;
+
+      let hasMoved = false;
 
       if (direction === 'LEFT' || direction === 'RIGHT') {
         for (let r = 0; r < BOARD_SIZE; r++) {
           let row = board[r];
           if (direction === 'RIGHT') row.reverse();
-          let newRow = slide(row);
+          
+          let { line: newRow, moved } = slideLine(row);
           if (direction === 'RIGHT') newRow.reverse();
+
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            if (newRow[c]) {
+              if (board[r][c] !== newRow[c] || newRow[c].r !== r || newRow[c].c !== c) {
+                hasMoved = true;
+              }
+              newRow[c].r = r;
+              newRow[c].c = c;
+            } else if (board[r][c] !== null) {
+              hasMoved = true;
+            }
+          }
           board[r] = newRow;
         }
       } else if (direction === 'UP' || direction === 'DOWN') {
         for (let c = 0; c < BOARD_SIZE; c++) {
           let column = [board[0][c], board[1][c], board[2][c], board[3][c]];
           if (direction === 'DOWN') column.reverse();
-          let newColumn = slide(column);
+          
+          let { line: newColumn, moved } = slideLine(column);
           if (direction === 'DOWN') newColumn.reverse();
+
           for (let r = 0; r < BOARD_SIZE; r++) {
+            if (newColumn[r]) {
+              if (board[r][c] !== newColumn[r] || newColumn[r].r !== r || newColumn[r].c !== c) {
+                hasMoved = true;
+              }
+              newColumn[r].r = r;
+              newColumn[r].c = c;
+            } else if (board[r][c] !== null) {
+              hasMoved = true;
+            }
             board[r][c] = newColumn[r];
           }
         }
       }
 
-      if (JSON.stringify(board) !== prevBoard) {
-        spawnTile();
-        renderBoard();
+      if (hasMoved) {
+        renderBoard(); // Animate slide transition
+        setTimeout(() => {
+          spawnTile();
+          renderBoard(); // Animate new tile spawn / pop
+          isMoving = false;
+        }, 100);
+      } else {
+        isMoving = false;
       }
     }
 
     function isGameOver() {
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
-          if (board[r][c] === 0) return false;
-          if (c < BOARD_SIZE - 1 && board[r][c] === board[r][c + 1]) return false;
-          if (r < BOARD_SIZE - 1 && board[r][c] === board[r + 1][c]) return false;
+          if (!board[r][c]) return false;
+          if (c < BOARD_SIZE - 1 && board[r][c + 1] && board[r][c].val === board[r][c + 1].val) return false;
+          if (r < BOARD_SIZE - 1 && board[r + 1][c] && board[r][c].val === board[r + 1][c].val) return false;
         }
       }
       return true;
     }
 
     function showOverlay(message) {
-      const boardElement = document.getElementById('board');
+      const container = document.getElementById('overlay-container');
+      if (container.children.length > 0) return;
+
       const overlay = document.createElement('div');
       overlay.className = 'game-over';
       overlay.innerHTML = `
         ${message}
         <button class="restart-btn" onclick="initGame()">Try Again</button>
       `;
-      boardElement.appendChild(overlay);
+      container.appendChild(overlay);
     }
 
     document.addEventListener('keydown', (e) => {
